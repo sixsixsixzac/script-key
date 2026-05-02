@@ -22,15 +22,15 @@ async function handle(req: Request, extra?: Record<string, unknown>) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const sessionId =
+  const directSessionId =
     (params.session as string) ??
     (params.subid as string) ??
     (params.sub as string) ??
     (params.s1 as string) ??
-    (params.unique_id as string) ??
+    (params.click_id as string) ??
     null;
 
-  if (!sessionId) {
+  if (!directSessionId) {
     return NextResponse.json({ ok: false, error: "missing session" }, { status: 400 });
   }
 
@@ -43,12 +43,14 @@ async function handle(req: Request, extra?: Record<string, unknown>) {
   const { data: session } = await supabaseAdmin
     .from("sessions")
     .select("id")
-    .eq("id", sessionId)
+    .eq("id", directSessionId)
     .maybeSingle();
 
   if (!session) {
     return NextResponse.json({ ok: false, error: "session not found" }, { status: 404 });
   }
+
+  const sessionId = session.id;
 
   const now = new Date().toISOString();
 
