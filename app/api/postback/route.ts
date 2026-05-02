@@ -27,6 +27,7 @@ async function handle(req: Request, extra?: Record<string, unknown>) {
     (params.subid as string) ??
     (params.sub as string) ??
     (params.s1 as string) ??
+    (params.unique_id as string) ??
     null;
 
   if (!sessionId) {

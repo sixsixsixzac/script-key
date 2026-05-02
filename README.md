@@ -38,7 +38,7 @@ NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 AD_POSTBACK_SECRET=<random 64 hex>
-LINKVERTISE_USER_ID=<your-linkvertise-publisher-id>
+LOOTLABS_LOCKER_URL=https://loot-link.com/s/XXXXXX
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
@@ -48,7 +48,7 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-หา `LINKVERTISE_USER_ID` ได้จาก [Linkvertise Dashboard](https://publisher.linkvertise.com/) → Profile / Settings (ตัวเลข user id ของบัญชี publisher)
+หา `LOOTLABS_LOCKER_URL` ได้จาก [Lootlabs Dashboard](https://www.lootlabs.gg/) → สร้าง content locker แล้วคัดลอก URL ของมัน
 
 ### 4. Dev
 
@@ -56,30 +56,37 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 npm run dev
 ```
 
-## Linkvertise integration (default)
+## Lootlabs integration (default)
 
-ระบบจะสร้าง URL Linkvertise แบบ dynamic ให้อัตโนมัติเมื่อ user กดปุ่ม "ดูโฆษณา" — flow:
+Lootlabs ใช้ **server-to-server postback** — ไม่มี redirect callback มาที่เรา ตั้งค่าใน Lootlabs dashboard:
+
+- **Destination URL** → `${NEXT_PUBLIC_SITE_URL}/?ad=ok` (หน้าที่ user จะถูก redirect หลังทำ locker เสร็จ)
+- **Postback URL** → `${NEXT_PUBLIC_SITE_URL}/api/postback?secret=<AD_POSTBACK_SECRET>&session={UNIQUE_ID}&click_id={CLICK_ID}&ip={IP}`
+
+Flow:
 
 ```
 [User] กด "ดูโฆษณา"
    ↓
-POST /api/ad/start  → สร้าง Linkvertise URL พร้อม HMAC token (อายุ 10 นาที)
+POST /api/ad/start  → คืน LOOTLABS_LOCKER_URL?unique_id=<sessionId>
    ↓
-[Linkvertise] user ดูโฆษณา / กดผ่าน
+[Lootlabs] user ทำ content locker / ดูโฆษณา
    ↓
-GET /api/ad/complete?session=...&exp=...&sig=...
-   ↓ ตรวจ HMAC + exp
-mark ad_completed = true → redirect /?ad=ok
+S2S: Lootlabs → GET /api/postback?secret=...&session=<sessionId>
+   ↓ ตรวจ secret
+mark ad_completed = true
+   ↓
+Lootlabs redirect user → /?ad=ok
 ```
 
 **กัน bypass:**
-- HMAC ผูกกับ session id + วันหมดอายุ ใช้ key คนอื่นไม่ได้
-- Token หมดอายุใน 10 นาที — กัน replay
+- `AD_POSTBACK_SECRET` เป็น shared secret — ห้ามใส่ใน frontend
+- session ต้องมีอยู่ใน DB แล้วเท่านั้น postback ถึงจะ mark completed ได้
 - หลัง generate key ระบบจะ reset `ad_completed = false` → ต้องดูโฆษณาใหม่ทุกครั้งที่อยาก key ใหม่
 
-## Postback fallback (สำหรับ ad server อื่น)
+## Postback สำหรับ ad provider อื่น
 
-ถ้าใช้ ad provider ที่รองรับ server-to-server postback ใช้ endpoint นี้ได้:
+endpoint เดียวกัน — รองรับ session alias: `session`, `subid`, `sub`, `s1`, `unique_id`:
 
 ```
 https://<domain>/api/postback?secret=<AD_POSTBACK_SECRET>&session={subid}
@@ -90,11 +97,10 @@ https://<domain>/api/postback?secret=<AD_POSTBACK_SECRET>&session={subid}
 | Method | Endpoint | Purpose |
 |---|---|---|
 | POST | `/api/session?id=...` | สร้างหรือคืน session + สถานะ key |
-| POST | `/api/ad/start` | สร้าง Linkvertise URL สำหรับ session |
-| GET | `/api/ad/complete` | callback จาก Linkvertise (verify HMAC) |
+| POST | `/api/ad/start` | คืน Lootlabs locker URL + unique_id |
 | POST | `/api/key/generate` | สร้าง key (ต้องดูโฆษณาแล้ว) |
 | POST/GET | `/api/key/verify` | ตรวจสอบ key |
-| GET/POST | `/api/postback` | (fallback) postback สำหรับ ad provider อื่น |
+| GET/POST | `/api/postback` | S2S postback (Lootlabs / ad provider อื่น) |
 
 ## Structure
 
@@ -104,15 +110,14 @@ app/
   verify/page.tsx       ตรวจสอบ key
   api/
     session/            สร้าง / ดึง session
-    ad/start/           สร้าง Linkvertise URL
-    ad/complete/        callback จาก Linkvertise
+    ad/start/           คืน Lootlabs locker URL
     key/generate/       สร้าง key
     key/verify/         ตรวจสอบ key
-    postback/           postback fallback
+    postback/           S2S postback
 components/ui/          shadcn primitives
 lib/
   supabase.ts           supabase admin client
-  linkvertise.ts        HMAC sign/verify + URL builder
+  lootlabs.ts           Lootlabs locker URL builder
   keys.ts               key generation & expiry
   utils.ts              cn, formatDuration
 supabase/schema.sql     ตาราง sessions, keys, ad_events

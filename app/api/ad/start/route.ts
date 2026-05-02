@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { buildLinkvertiseUrl, signAd, TOKEN_TTL_MS } from "@/lib/linkvertise";
+import { buildLootlabsUrl } from "@/lib/lootlabs";
 import { enforceRateLimits } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/client-ip";
 
@@ -37,16 +37,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "session not found" }, { status: 404 });
   }
 
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(req.url).origin;
-  const exp = Date.now() + TOKEN_TTL_MS;
-  const sig = signAd(sessionId, exp);
-
-  const callback = `${origin}/api/ad/complete?session=${encodeURIComponent(
-    sessionId
-  )}&exp=${exp}&sig=${sig}`;
-
   try {
-    const url = buildLinkvertiseUrl(callback);
+    const url = buildLootlabsUrl(sessionId);
     return NextResponse.json({ url });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "failed to build url";
